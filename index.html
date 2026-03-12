@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catur Mobile - Click to Move</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    
+    <style>
+        body { 
+            background: #1a1a1a; 
+            color: white; 
+            font-family: 'Segoe UI', sans-serif; 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center;
+            touch-action: manipulation; /* Optimasi sentuhan HP */
+        }
+        
+        .header {
+            width: 100%;
+            max-width: 500px;
+            padding: 15px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        /* Container Papan Responsive */
+        #board-container {
+            width: 95vw; /* 95% lebar layar HP */
+            max-width: 500px; /* Maksimal lebar di PC */
+            margin: auto;
+        }
+
+        /* Warna Petunjuk Jalan (Hint Hijau) */
+        .highlight-hint {
+            box-shadow: inset 0 0 3px 3px rgba(39, 174, 96, 0.9);
+            background-color: rgba(46, 204, 113, 0.4) !important;
+        }
+
+        /* Warna Kotak yang Sedang Dipilih */
+        .highlight-selected {
+            background-color: rgba(241, 196, 15, 0.5) !important;
+        }
+
+        .timer-box {
+            font-size: 20px;
+            background: #333;
+            padding: 10px;
+            border-radius: 5px;
+            border: 2px solid #555;
+            margin-bottom: 10px;
+            display: inline-block;
+            min-width: 120px;
+        }
+
+        .status { margin-top: 10px; font-weight: bold; color: #ecf0f1; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="timer-box">
+            <span id="timer">01:30</span>
+        </div>
+        <div id="status" class="status">Giliran: PUTIH</div>
+    </div>
+
+    <div id="board-container">
+        <div id="myBoard"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+
+    <script>
+        var board = null;
+        var game = new Chess();
+        var moveTimeLimit = 90;
+        var timeLeft = moveTimeLimit;
+        var timerInterval = null;
+        var selectedSquare = null;
+
+        // --- FUNGSI TIMER ---
+        function startTimer() {
+            timeLeft = moveTimeLimit;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                updateTimerUI();
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    alert("Waktu habis! Giliran otomatis pindah.");
+                    forceSkipTurn();
+                }
+            }, 1000);
+        }
+
+        function updateTimerUI() {
+            let min = Math.floor(timeLeft / 60);
+            let sec = timeLeft % 60;
+            $('#timer').text(`${min < 10 ? '0' : ''}${min}:${sec < 10 ? '0' : ''}${sec}`);
+        }
+
+        function forceSkipTurn() {
+            let fen = game.fen().split(' ');
+            fen[1] = fen[1] === 'w' ? 'b' : 'w';
+            game.load(fen.join(' '));
+            board.position(game.fen());
+            afterMove();
+        }
+
+        // --- LOGIKA KLIK & HIGHLIGHT ---
+        function removeHighlights() {
+            $('#myBoard .square-55d63').removeClass('highlight-hint highlight-selected');
+        }
+
+        function addHighlight(square, type) {
+            $(`#myBoard .square-${square}`).addClass(type === 'hint' ? 'highlight-hint' : 'highlight-selected');
+        }
+
+        // Saat kotak di papan diklik
+        function onSquareClick(square) {
+            let piece = game.get(square);
+
+            // 1. Jika sudah ada yang dipilih, coba pindah
+            if (selectedSquare) {
+                let move = game.move({
+                    from: selectedSquare,
+                    to: square,
+                    promotion: 'q'
+                });
+
+                if (move === null) {
+                    // Jika klik pion lain milik sendiri, ganti pilihan
+                    if (piece && piece.color === game.turn()) {
+                        selectPiece(square);
+                    } else {
+                        // Jika klik tempat ilegal, batal pilih
+                        selectedSquare = null;
+                        removeHighlights();
+                    }
+                } else {
+                    // Gerakan Valid
+                    board.position(game.fen());
+                    selectedSquare = null;
+                    removeHighlights();
+                    afterMove();
+                }
+            } else {
+                // 2. Jika belum ada yang dipilih, pilih pion
+                if (piece && piece.color === game.turn()) {
+                    selectPiece(square);
+                }
+            }
+        }
+
+        function selectPiece(square) {
+            removeHighlights();
+            selectedSquare = square;
+            addHighlight(square, 'selected');
+
+            // Tampilkan kemana saja pion bisa jalan (Hint Hijau)
+            let moves = game.moves({ square: square, verbose: true });
+            moves.forEach(m => addHighlight(m.to, 'hint'));
+        }
+
+        function afterMove() {
+            let turnText = game.turn() === 'w' ? "PUTIH" : "HITAM";
+            $('#status').text("Giliran: " + turnText + (game.in_check() ? " (SKAK!)" : ""));
+            
+            if (game.in_checkmate()) {
+                $('#status').text("SKAKMAT! " + (game.turn() === 'w' ? "HITAM" : "PUTIH") + " MENANG!");
+                clearInterval(timerInterval);
+            } else {
+                startTimer();
+            }
+        }
+
+        // --- INISIALISASI ---
+        var config = {
+            position: 'start',
+            draggable: false, // Matikan drag agar fokus ke klik
+            pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png'
+        };
+
+        board = Chessboard('myBoard', config);
+
+        // Pasang event klik pada kotak papan
+        $('#myBoard').on('click', '.square-55d63', function() {
+            let square = $(this).attr('data-square');
+            onSquareClick(square);
+        });
+
+        // Agar ukuran otomatis menyesuaikan layar saat HP diputar (Landscape/Portrait)
+        $(window).resize(board.resize);
+
+        startTimer();
+    </script>
+</body>
+</html>
